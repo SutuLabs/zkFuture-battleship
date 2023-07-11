@@ -40,6 +40,23 @@ contract Game is IGame {
         _hits = game.hits;
         _winner = game.winner;
     }
+    
+    function shots(uint256 _gameId)
+        external
+        view
+        returns (
+            uint256[100] memory _p1,
+            uint256[100] memory _p2
+        )
+    {
+        Game storage game = games[_gameId];
+
+        for (uint256 i; i < 100; ) {
+            _p1[i] = game.shots[i];
+            _p2[i] = game.shots[100 + i];
+            unchecked {++i;}
+        }
+    }
 
     function startGame(
         uint256 _boardHash,

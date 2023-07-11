@@ -130,18 +130,65 @@
           <q-card-section class="bg-green-1 text-white">
             <q-btn
               color="secondary"
-              label="Submit"
+              label="Host New Game"
               class="full-width"
+              icon="flag"
               push
               @click="submit()"
             />
             <q-input v-model="gameId" label="Game ID" type="number">
               <template v-slot:after>
-                <q-btn color="primary" push icon="send" @click="join()"
-                  >JOIN</q-btn
-                >
+                <q-btn
+                  color="primary"
+                  push
+                  label="Join Game"
+                  icon="send"
+                  @click="join(BigInt(gameId))"
+                />
               </template>
             </q-input>
+          </q-card-section>
+
+          <q-card-section class="">
+            <q-list bordered>
+              <q-item-label header>Onchain Games</q-item-label>
+
+              <q-item
+                v-for="game in gameList"
+                :key="game.id.toString()"
+                class="q-mb-sm"
+                clickable
+                @click="clickGame(game.id)"
+                v-ripple
+              >
+                <q-item-section avatar>
+                  <q-avatar>
+                    <q-icon
+                      :name="
+                        game.status == 'MY-GAMING'
+                          ? 'sports_esports'
+                          : game.status == 'WAITJOIN'
+                          ? 'rocket_launch'
+                          : game.status == 'WAITOTHER'
+                          ? 'pending'
+                          : game.status == 'WIN'
+                          ? 'sports_score'
+                          : game.status == 'OTHER-GAMING'
+                          ? 'visibility'
+                          : ''
+                      "
+                    />
+                  </q-avatar>
+                </q-item-section>
+
+                <q-item-section>
+                  <q-item-label>{{ game.title }}</q-item-label>
+                  <q-item-label caption lines="1"
+                    >ID: {{ game.id }}, {{ game.subtitle }}</q-item-label
+                  >
+                </q-item-section>
+              </q-item>
+            </q-list>
           </q-card-section>
         </q-card>
       </div>
@@ -223,7 +270,15 @@ import { ethers, JsonRpcSigner } from 'ethers';
 import { Game__factory } from 'src/contracts';
 // import { JsonRpcSigner, Web3Provider } from '@ethersproject/providers';
 // import { JsonRpcSigner, Web3Provider } from 'ethers';
-import { useQuasar } from 'quasar';
+import {
+  QSpinnerClock,
+  QSpinnerComment,
+  QSpinnerGears,
+  useQuasar,
+} from 'quasar';
+import { getBoardProof, ShipBoard } from 'src/services/gameProof';
+import { ShipInfo } from 'src/services/shipData';
+import { convertToGameState, GameState } from 'src/services/gameInfo';
 
 const $q = useQuasar();
 // interface Props {
@@ -239,38 +294,9 @@ const $q = useQuasar();
 const gameId = ref(1);
 
 const gameMode: Ref<'Setup' | 'Attack'> = ref('Setup');
+const ships = ShipInfo;
+const shipDict = Object.assign({}, ...ships.map((x) => ({ [x.id]: x })));
 
-function join() {
-  gameMode.value = 'Attack';
-}
-
-const ships = [
-  {
-    length: 5,
-    name: 'Carrier',
-    id: 'carrier',
-  },
-  {
-    length: 4,
-    name: 'Battle Ship',
-    id: 'battleship',
-  },
-  {
-    length: 3,
-    name: 'Cruiser',
-    id: 'cruiser',
-  },
-  {
-    length: 3,
-    name: 'Submarine',
-    id: 'submarine',
-  },
-  {
-    length: 2,
-    name: 'Destroyer',
-    id: 'destroyer',
-  },
-];
 //console.log(await ships[0].image)
 function attack(x: number, y: number) {
   $q.dialog({
@@ -393,146 +419,153 @@ const selZ = computed({
   },
 });
 
-const proofResult = ref('');
+const shipBoard = computed((): ShipBoard => {
+  const ships = Object.entries(fleet.value)
+    .map(([key, val]) => [shipDict[key].proofId, [val.x - 1, val.y - 1, val.z]])
+    .sort((b, a) => a[0] - b[0]) // reverse order
+    .map((_) => _[1]);
+  return [ships[0], ships[1], ships[2], ships[3], ships[4]];
+});
+
+const account = ref('');
+
+let signer: JsonRpcSigner | null = null;
+
+let provider;
+if (window.ethereum == null) {
+  // // If MetaMask is not installed, we use the default provider,
+  // // which is backed by a variety of third-party services (such
+  // // as INFURA). They do not have private keys installed so are
+  // // only have read-only access
+  // console.log('MetaMask not installed; using read-only defaults');
+  // // provider = ethers.getDefaultProvider();
+  // provider = (ethers as any).getDefaultProvider();
+  console.log('nothing');
+} else {
+  // Connect to the MetaMask EIP-1193 object. This is a standard
+  // protocol that allows Ethers access to make all read-only
+  // requests through MetaMask.
+  provider = new ethers.BrowserProvider(window.ethereum, 1287);
+  // const RPC_HOST = 'https://moonbase-alpha.public.blastapi.io/';
+  // provider = new ethers.JsonRpcProvider(RPC_HOST);
+  // provider = new Web3Provider(window.ethereum);
+
+  // It also provides an opportunity to request access to write
+  // operations, which will be performed by the private key
+  // that MetaMask manages for the user.
+  signer = await provider.getSigner();
+  console.log('get signer', provider, signer);
+
+  // let accounts = await provider.send("eth_requestAccounts", []);
+  // account.value = accounts[0];
+  account.value = await signer.getAddress();
+}
+
+const g = Game__factory.connect(
+  // '0x0327BdBc3cE56723B5319D90E106685755f42A8f',
+  '0xBFfb879445a35327f2955Da1a2cDC99d9fb04D5D',
+  signer
+);
+// console.log('get game index');
+const gi = await g.gameIndex();
+// console.log('index', gi);
+
+const gameList: Ref<GameState[]> = ref([]);
+
+refreshList();
+
+async function refreshList() {
+  gameList.value = [];
+  for (let i = Math.max(Number(gi) - 5, 0); i < gi; i++) {
+    const gs = await g.gameState(i);
+    // console.log('gs', gs);
+    // const gg = await g.games(i);
+    // console.log('gg', gg);
+    gameList.value.push(convertToGameState(gs, account.value, BigInt(i)));
+  }
+}
+
+async function clickGame(id: bigint) {
+  const game = gameList.value.filter((_) => _.id == id)[0];
+  if (!game) return;
+  switch (game.status) {
+    case 'MY-GAMING':
+      $q.notify('Not support');
+      break;
+    case 'WAITOTHER':
+      $q.notify('Please wait other to join');
+      break;
+    case 'WAITJOIN':
+      join(id);
+      break;
+
+    default:
+      $q.notify('Not support');
+      break;
+  }
+}
 
 async function submit() {
-  console.log('submit');
-  const { proof, publicSignals } = await window.snarkjs.groth16.fullProve(
-    {
-      ships: [
-        ['0', '0', '1'],
-        ['1', '0', '1'],
-        ['2', '0', '1'],
-        ['3', '0', '1'],
-        ['4', '0', '1'],
-      ],
-      trapdoor: '123121',
-    },
+  try {
+    $q.loading.show({
+      message: 'Generating Proof...',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerGears,
+    });
+    const p = await getBoardProof(shipBoard.value);
 
-    'circuits/BoardEligibility.wasm',
-    'circuits/BoardEligibility_final.zkey'
-  );
+    $q.loading.show({
+      message: 'Submitting Transaction',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'secondary',
+      spinner: QSpinnerComment,
+    });
+    const t = await g.startGame(p.boardHash, p.a, p.b, p.c);
 
-  proofResult.value = JSON.stringify(proof, null, 1);
-  // console.log('proved', proof, publicSignals, proofResult);
-
-  // const vkey = await fetch('circuits/BoardEligibility_vkey.json').then(
-  //   function (res) {
-  //     return res.json();
-  //   }
-  // );
-
-  // const res = await window.snarkjs.groth16.verify(vkey, publicSignals, proof);
-  // console.log(res);
-  // const wallet = useMetaMaskWallet();
-  // console.log(wallet);
-
-  let signer: JsonRpcSigner | null = null;
-
-  let provider;
-  if (window.ethereum == null) {
-    // // If MetaMask is not installed, we use the default provider,
-    // // which is backed by a variety of third-party services (such
-    // // as INFURA). They do not have private keys installed so are
-    // // only have read-only access
-    // console.log('MetaMask not installed; using read-only defaults');
-    // // provider = ethers.getDefaultProvider();
-    // provider = (ethers as any).getDefaultProvider();
-    console.log('nothing');
-  } else {
-    // Connect to the MetaMask EIP-1193 object. This is a standard
-    // protocol that allows Ethers access to make all read-only
-    // requests through MetaMask.
-    provider = new ethers.BrowserProvider(window.ethereum, 1287);
-    // const RPC_HOST = 'https://moonbase-alpha.public.blastapi.io/';
-    // provider = new ethers.JsonRpcProvider(RPC_HOST);
-    // provider = new Web3Provider(window.ethereum);
-
-    // It also provides an opportunity to request access to write
-    // operations, which will be performed by the private key
-    // that MetaMask manages for the user.
-    signer = await provider.getSigner();
-    console.log('get signer', provider, signer);
-
-    const g = Game__factory.connect(
-      '0x0327BdBc3cE56723B5319D90E106685755f42A8f',
-      signer
-    );
-    // console.log('get game index');
-    const gi = await g.gameIndex();
-    console.log('index', gi);
-
-    const ep = await window.snarkjs.groth16.exportSolidityCallData(
-      proof,
-      publicSignals
-    );
-    const eep = JSON.parse('[' + ep + ']');
-    console.log('ep', eep);
-
-    // console.log(
-    //   '0x' + new BigNumber(publicSignals[0]).toString(16),
-    //   ',',
-    //   JSON.stringify(
-    //     proof.pi_a
-    //       .slice(0, 2)
-    //       .map((_: any) => '0x' + new BigNumber(_).toString(16))
-    //   ).replaceAll('"', ''),
-    //   ',',
-    //   JSON.stringify(
-    //     proof.pi_b
-    //       .slice(0, 2)
-    //       .map((bb: any) =>
-    //         bb.map((_: any) => '0x' + new BigNumber(_).toString(16))
-    //       )
-    //   ).replaceAll('"', ''),
-    //   ',',
-    //   JSON.stringify(
-    //     proof.pi_c
-    //       .slice(0, 2)
-    //       .map((_: any) => '0x' + new BigNumber(_).toString(16))
-    //   ).replaceAll('"', '')
-    // );
-    // console.log(
-    //   publicSignals[0],
-    //   ',',
-    //   JSON.stringify(proof.pi_a.slice(0, 2)),
-    //   ',',
-    //   JSON.stringify(proof.pi_b.slice(0, 2)),
-    //   ',',
-    //   JSON.stringify(proof.pi_c.slice(0, 2))
-    // );
-    console.log('get game');
-    const t = await g.startGame(eep[3][0], eep[0], eep[1], eep[2]);
-    console.log('start game');
+    $q.loading.show({
+      message: 'Waiting Transaction to be included in Blockchain',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerClock,
+    });
     await t.wait();
-    console.log('waiting');
+    refreshList();
+  } finally {
+    $q.loading.hide();
   }
+}
 
-  //   // The contract ABI (fragments we care about)
-  // const abi = [
-  //   "function decimals() view returns (uint8)",
-  //   "function symbol() view returns (string)",
-  //   "function balanceOf(address a) view returns (uint)"
-  // ]
+async function join(id: bigint) {
+  try {
+    $q.loading.show({
+      message: 'Generating Proof...',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerGears,
+    });
+    const p = await getBoardProof(shipBoard.value);
 
-  // // Create a contract; connected to a Provider, so it may
-  // // only access read-only methods (like view and pure)
-  // contract = new Contract("dai.tokens.ethers.eth", abi, provider)
+    $q.loading.show({
+      message: 'Submitting Transaction',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'secondary',
+      spinner: QSpinnerComment,
+    });
+    const t = await g.joinGame(id, p.boardHash, p.a, p.b, p.c);
 
-  // // The symbol name for the token
-  // sym = await contract.symbol()
-  // // 'DAI'
+    $q.loading.show({
+      message: 'Waiting Transaction to be included in Blockchain',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerClock,
+    });
+    await t.wait();
 
-  // // The number of decimals the token uses
-  // decimals = await contract.decimals()
-  // // 18n
-
-  // // Read the token balance for an account
-  // balance = await contract.balanceOf("ethers.eth")
-  // // 201469770000000000000000n
-
-  // // Format the balance for humans, such as in a UI
-  // formatUnits(balance, decimals)
+    gameMode.value = 'Attack';
+  } finally {
+    $q.loading.hide();
+  }
 }
 </script>
 
