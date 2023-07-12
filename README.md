@@ -26,6 +26,25 @@ battleship舰艇对战游戏是一种双人游戏，每个玩家都有一张NxM�
 - `src/contracts/` 合约代码
 - `scripts` 一些辅助脚本代码
 
+```mermaid
+flowchart LR
+    circuit["Circuits(.circom)"]
+    contract["Contracts(.sol)"]
+    verifier["Verifier(.sol)"]
+
+    circuit -- snarkjs --> verifier
+
+    subgraph ui["Frontend"]
+        contractTyping["Contract Typing(.ts)"]
+        circuitTyping["Circuit Typing(.ts)"]
+    end
+
+    circuit -- zkFuture --> circuitTyping 
+    verifier -- typechain --> contractTyping 
+    contract -- typechain --> contractTyping 
+
+```
+
 ## 游戏逻辑
 
 由其中一个玩家开启游戏，另外一个玩家使用同样的ID号加入游戏。能顺利加入游戏的必要条件就是通过BoardEligibility的零知识电路的检查。
