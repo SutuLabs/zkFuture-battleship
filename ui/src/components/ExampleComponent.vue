@@ -210,7 +210,10 @@
       <div class="col">
         <q-card class="q-ma-lg">
           <q-card-section class="bg-negative text-white">
-            <div class="text-h6">Opponent's fleet</div>
+            <div class="text-h6">
+              Opponent's fleet
+              <q-btn flat rounded icon="refresh" @click="refreshGame()" />
+            </div>
           </q-card-section>
 
           <q-separator />
@@ -287,11 +290,20 @@ import {
   QSpinnerClock,
   QSpinnerComment,
   QSpinnerGears,
+  QSpinnerRadio,
   useQuasar,
 } from 'quasar';
-import { getBoardProof, ShipBoard } from 'src/services/gameProof';
+import {
+  getAttackProof,
+  getBoardProof,
+  ShipBoard,
+} from 'src/services/gameProof';
 import { ShipInfo } from 'src/services/shipData';
-import { convertToGameState, GameState } from 'src/services/gameInfo';
+import {
+  convertShots,
+  convertToGameState,
+  GameState,
+} from 'src/services/gameInfo';
 
 const $q = useQuasar();
 // interface Props {
@@ -430,7 +442,7 @@ if (window.ethereum == null) {
 
 const g = Game__factory.connect(
   // '0x0327BdBc3cE56723B5319D90E106685755f42A8f',
-  '0x64e10aC0b7df3941b4B1c415946e7DbBb4473069',
+  '0xff5284C5F427F0e33c40426F848e1148367cFf56',
   signer
 );
 
@@ -548,6 +560,11 @@ async function join(id: bigint) {
 
 // ======================== Attack Page
 
+const curGame: Ref<GameState | undefined> = ref(undefined);
+const curPlayerIndex = ref(0);
+const prevTurnShotIndex = ref(-1);
+const isMyTurn = ref(false);
+
 type Turn = {
   [key: string]: 'miss' | 'hit';
 };
@@ -572,64 +589,161 @@ const myTurns: Ref<Turn> = ref({
   '7|9': 'miss',
 });
 
-async function refreshGame(id: bigint) {
-  const game = gameList.value.filter((_) => _.id == id)[0];
-  if (!game) return;
-  const gs = await g.shots(id);
-  let [p1s, p2s, p1h, p2h] = gs;
-  const swap = (a: object, b: object) => {
-    const x = a;
-    a = b;
-    b = x;
-  };
-  if (
-    account.value != game.participants[0] &&
-    account.value == game.participants[1]
-  ) {
-    swap(p1s, p2s);
-    swap(p1h, p2h);
+async function refreshGame(id: bigint | undefined) {
+  try {
+    if (id === undefined) id = curGame.value?.id;
+    if (id === undefined) return;
+
+    $q.loading.show({
+      message: 'Retrieving Game State...',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerRadio,
+    });
+
+    const gsraw = await g.gameState(id);
+    const game = convertToGameState(gsraw, account.value, BigInt(id));
+    if (
+      game.participants[0] == game.participants[1] &&
+      game.participants[0] == '0x0000000000000000000000000000000000000000'
+    )
+      return;
+
+    curGame.value = game;
+
+    $q.loading.show({
+      message: 'Retrieving bullets...',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerRadio,
+    });
+    const gs = await g.shots(id);
+    const [p1s, p2s, p1h, p2h] = gs;
+    const pShots = [p1s, p2s];
+    const pHits = [p1h, p2h];
+
+    // truth table:
+    // PlayerIndex, Modulo, isMyTurn
+    // 0, 1, 1
+    // 0, 0, 0
+    // 1, 1, 0
+    // 1, 0, 1
+    curPlayerIndex.value = game.participants[0] == account.value ? 0 : 1;
+    isMyTurn.value =
+      Number(game.turn) % 2 ^ curPlayerIndex.value ? true : false;
+
+    myTurns.value = convertShots(
+      pShots[1 - curPlayerIndex.value],
+      pHits[1 - curPlayerIndex.value]
+    );
+    opTurns.value = convertShots(
+      pShots[curPlayerIndex.value],
+      pHits[curPlayerIndex.value]
+    );
+
+    // console.log(
+    //   JSON.stringify(opTurns.value),
+    //   pShots[1 - curPlayerIndex.value],
+    //   pHits
+    // );
+    // console.log(JSON.stringify(myTurns.value), pShots[curPlayerIndex.value]);
+
+    if (game.turn > 1 && isMyTurn.value)
+      prevTurnShotIndex.value = pShots[1 - curPlayerIndex.value]
+        .map((val, idx) => ({ idx, val }))
+        .filter((_) => _.val == game.turn - 1n)[0].idx;
+
+    gameMode.value = 'Attack';
+  } catch (err) {
+    console.warn('unable to refresh game', err);
+  } finally {
+    $q.loading.hide();
   }
-
-  opTurns.value = convertShots(p2s, p2h);
-  myTurns.value = convertShots(p1s, p1h);
-  console.log(opTurns.value, myTurns.value);
-
-  gameMode.value = 'Attack';
-}
-
-function convertShots(rawShot: bigint[], rawHit: boolean[]): Turn {
-  const turn: Turn = {};
-  for (let i = 0; i < rawShot.length; i++) {
-    const e = Number(rawShot[i]);
-    if (e > 0) {
-      const h = Number(rawHit[i]);
-      const x = e % 10;
-      const y = Math.floor(e / 10);
-      turn[`${x + 1}|${y + 1}`] = h ? 'hit' : 'miss';
-    }
-  }
-  return turn;
 }
 
 function attack(x: number, y: number) {
-  $q.dialog({
-    title: 'Confirm',
-    message: `Attack (${x}, ${y}), confirm?`,
-    cancel: true,
-    persistent: true,
-  })
-    .onOk(() => {
-      // console.log('>>>> OK')
-    })
-    .onOk(() => {
-      // console.log('>>>> second OK catcher')
-    })
-    .onCancel(() => {
-      // console.log('>>>> Cancel')
-    })
-    .onDismiss(() => {
-      // console.log('I am triggered on both OK and Cancel')
+  if (!isMyTurn.value) {
+    $q.notify('Not your turn.');
+  } else {
+    $q.dialog({
+      title: 'Confirm',
+      message: `Attack (${x}, ${y}), confirm?`,
+      cancel: true,
+      persistent: true,
+    }).onOk(() => {
+      attackAction(x - 1 + (y - 1) * 10);
     });
+  }
+}
+
+async function attackAction(shotIndex: number) {
+  try {
+    const game = curGame.value;
+    if (!game) return;
+
+    let t;
+    if (game.turn == 1n) {
+      $q.loading.show({
+        message: 'Submitting Transaction',
+        boxClass: 'bg-grey-2 text-grey-9',
+        spinnerColor: 'secondary',
+        spinner: QSpinnerComment,
+      });
+      t = await g.playFirstTurn(game.id, shotIndex);
+    } else {
+      $q.loading.show({
+        message: 'Generating Proof...',
+        boxClass: 'bg-grey-2 text-grey-9',
+        spinnerColor: 'primary',
+        spinner: QSpinnerGears,
+      });
+      const p = await getAttackProof(
+        shipBoard.value,
+        game.boards[curPlayerIndex.value],
+        BigInt(prevTurnShotIndex.value)
+      );
+
+      $q.loading.show({
+        message: 'Submitting Transaction',
+        boxClass: 'bg-grey-2 text-grey-9',
+        spinnerColor: 'secondary',
+        spinner: QSpinnerComment,
+      });
+      console.log(
+        game.id,
+        p.hitShip,
+        prevTurnShotIndex.value,
+        shotIndex,
+        p.a,
+        p.b,
+        p.c
+      );
+      t = await g.playTurn(
+        game.id,
+        p.hitShip,
+        prevTurnShotIndex.value,
+        shotIndex,
+        p.a,
+        p.b,
+        p.c
+      );
+    }
+
+    $q.loading.show({
+      message: 'Waiting Transaction to be included in Blockchain',
+      boxClass: 'bg-grey-2 text-grey-9',
+      spinnerColor: 'primary',
+      spinner: QSpinnerClock,
+    });
+    await t.wait();
+
+    // delay refresh due to RPC may not see this transaction such fast
+    setTimeout(() => {
+      refreshGame(game.id);
+    }, 4000);
+  } finally {
+    $q.loading.hide();
+  }
 }
 </script>
 

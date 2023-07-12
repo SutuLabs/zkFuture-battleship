@@ -92,6 +92,7 @@ contract Game is IGame {
 
         game.participants[1] = msg.sender;
         game.boards[1] = _boardHash;
+        game.turn = 1;
 
         emit Joined(_gameId, msg.sender);
     }
@@ -99,7 +100,7 @@ contract Game is IGame {
     function playFirstTurn(uint256 _gameId, uint256 _turnShotIndex) external {
         Game storage game = games[_gameId];
 
-        require(game.turn == 0, "Not the first turn!");
+        require(game.turn == 1, "Not the first turn!");
         require(msg.sender == game.participants[0], "Not turn!");
         require(_turnShotIndex < 100, "Shot coordinates invalid!");
 
@@ -121,10 +122,10 @@ contract Game is IGame {
     ) external {
         Game storage game = games[_gameId];
 
-        uint256 prevPlayerIndex = (game.turn - 1) % 2;
-        uint256 currPlayerIndex = game.turn % 2;
+        uint256 prevPlayerIndex = game.turn % 2;
+        uint256 currPlayerIndex = (game.turn - 1) % 2;
 
-        require(game.turn > 0, "The first turn!");
+        require(game.turn > 1, "The first turn!");
         require(msg.sender == game.participants[currPlayerIndex], "Not turn!");
         require(game.winner == address(0), "Game already over!");
         require(_turnShotIndex < 100, "Next shot coordinates invalid!");

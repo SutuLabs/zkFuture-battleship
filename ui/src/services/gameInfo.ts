@@ -71,3 +71,17 @@ export function convertToGameState(
     status,
   };
 }
+
+export function convertShots(rawShot: bigint[], rawHit: boolean[]): Turn {
+  const turn: Turn = {};
+  for (let i = 0; i < rawShot.length; i++) {
+    const e = Number(rawShot[i]);
+    if (e > 0) {
+      const h = Number(rawHit[i]);
+      const x = i % 10;
+      const y = Math.floor(i / 10);
+      turn[`${x + 1}|${y + 1}`] = h ? 'hit' : 'miss';
+    }
+  }
+  return turn;
+}
