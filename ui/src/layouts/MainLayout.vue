@@ -2,7 +2,7 @@
   <q-layout view="lHh Lpr lFf">
     <q-header elevated>
       <q-toolbar>
-        <q-toolbar-title> Future Tool - Battleship </q-toolbar-title>
+        <q-toolbar-title> zkFuture - Battleship </q-toolbar-title>
 
         <ConnectWalletButton
           :address="address"
@@ -58,7 +58,7 @@ useMeta({
 });
 
 const wallet = useMetaMaskWallet();
-console.log(wallet);
+// console.log(wallet);
 
 const address = ref('');
 
@@ -78,10 +78,10 @@ const connect = async () => {
   address.value = accounts[0];
 };
 
-const switchAccount = async () => {
-  await wallet.switchAccounts();
-  connect();
-};
+// const switchAccount = async () => {
+//   await wallet.switchAccounts();
+//   connect();
+// };
 
 const isConnected = async () => {
   const accounts = await wallet.getAccounts();
