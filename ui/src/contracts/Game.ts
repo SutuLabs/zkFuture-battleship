@@ -33,6 +33,7 @@ export interface GameInterface extends Interface {
       | "joinGame"
       | "playFirstTurn"
       | "playTurn"
+      | "shots"
       | "startGame"
   ): FunctionFragment;
 
@@ -81,6 +82,7 @@ export interface GameInterface extends Interface {
       [BigNumberish, BigNumberish]
     ]
   ): string;
+  encodeFunctionData(functionFragment: "shots", values: [BigNumberish]): string;
   encodeFunctionData(
     functionFragment: "startGame",
     values: [
@@ -104,6 +106,7 @@ export interface GameInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "playTurn", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "shots", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "startGame", data: BytesLike): Result;
 }
 
@@ -271,6 +274,19 @@ export interface Game extends BaseContract {
     "nonpayable"
   >;
 
+  shots: TypedContractMethod<
+    [_gameId: BigNumberish],
+    [
+      [bigint[], bigint[], boolean[], boolean[]] & {
+        _p1s: bigint[];
+        _p2s: bigint[];
+        _p1h: boolean[];
+        _p2h: boolean[];
+      }
+    ],
+    "view"
+  >;
+
   startGame: TypedContractMethod<
     [
       _boardHash: BigNumberish,
@@ -348,6 +364,20 @@ export interface Game extends BaseContract {
     ],
     [void],
     "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "shots"
+  ): TypedContractMethod<
+    [_gameId: BigNumberish],
+    [
+      [bigint[], bigint[], boolean[], boolean[]] & {
+        _p1s: bigint[];
+        _p2s: bigint[];
+        _p1h: boolean[];
+        _p2h: boolean[];
+      }
+    ],
+    "view"
   >;
   getFunction(
     nameOrSignature: "startGame"

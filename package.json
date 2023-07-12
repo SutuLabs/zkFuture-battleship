@@ -11,7 +11,7 @@
     "build:board": "bash ./scripts/compile.sh src/circuits/BoardEligibility && bash ./scripts/cpcircuit.sh src/circuits/BoardEligibility",
     "build:attack": "bash ./scripts/compile.sh src/circuits/RevealAttack && bash ./scripts/cpcircuit.sh src/circuits/RevealAttack",
     "build:circuits": "npm run build:board && npm run build:attack",
-    "build:contracts": "typechain --target ethers-v6 --out-dir ui/src/contracts out/**/*.json",
+    "build:contracts": "forge build && typechain --target ethers-v6 --out-dir ui/src/contracts out/**/*.json",
     "setup:ptau": "wget -O pot_final.ptau https://hermez.s3-eu-west-1.amazonaws.com/powersOfTau28_hez_final_15.ptau",
     "deploy:contracts": "bash ./scripts/deploy.sh",
     "build": "npm run build:circuits"

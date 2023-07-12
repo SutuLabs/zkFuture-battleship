@@ -45,15 +45,19 @@ contract Game is IGame {
         external
         view
         returns (
-            uint256[100] memory _p1,
-            uint256[100] memory _p2
+            uint256[100] memory _p1s,
+            uint256[100] memory _p2s,
+            bool[100] memory _p1h,
+            bool[100] memory _p2h
         )
     {
         Game storage game = games[_gameId];
 
         for (uint256 i; i < 100; ) {
-            _p1[i] = game.shots[i];
-            _p2[i] = game.shots[100 + i];
+            _p1s[i] = game.shots[i];
+            _p2s[i] = game.shots[100 + i];
+            _p1h[i] = game.shipHits[i];
+            _p2h[i] = game.shipHits[100 + i];
             unchecked {++i;}
         }
     }
@@ -129,6 +133,7 @@ contract Game is IGame {
 
         if (_hitShipId != 0) {
             game.hits[prevPlayerIndex]++;
+            game.shipHits[_prevTurnShotIndex + prevPlayerIndex * 100] = true;
         }
 
         emit ShotLanded(_gameId, uint8(_hitShipId));

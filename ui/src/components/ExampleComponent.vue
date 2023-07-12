@@ -151,7 +151,16 @@
 
           <q-card-section class="">
             <q-list bordered>
-              <q-item-label header>Onchain Games</q-item-label>
+              <q-item-label header
+                >Onchain Games
+                <q-btn
+                  flat
+                  rounded
+                  icon="refresh"
+                  size="sm"
+                  @click="refreshList()"
+                />
+              </q-item-label>
 
               <q-item
                 v-for="game in gameList"
@@ -188,6 +197,10 @@
                   >
                 </q-item-section>
               </q-item>
+
+              <q-inner-loading :showing="isListRefreshing">
+                <q-spinner-gears size="50px" color="primary" />
+              </q-inner-loading>
             </q-list>
           </q-card-section>
         </q-card>
@@ -297,28 +310,6 @@ const gameMode: Ref<'Setup' | 'Attack'> = ref('Setup');
 const ships = ShipInfo;
 const shipDict = Object.assign({}, ...ships.map((x) => ({ [x.id]: x })));
 
-//console.log(await ships[0].image)
-function attack(x: number, y: number) {
-  $q.dialog({
-    title: 'Confirm',
-    message: `Attack (${x}, ${y}), confirm?`,
-    cancel: true,
-    persistent: true,
-  })
-    .onOk(() => {
-      // console.log('>>>> OK')
-    })
-    .onOk(() => {
-      // console.log('>>>> second OK catcher')
-    })
-    .onCancel(() => {
-      // console.log('>>>> Cancel')
-    })
-    .onDismiss(() => {
-      // console.log('I am triggered on both OK and Cancel')
-    });
-}
-
 const fleet: Ref<{ [key: string]: { x: number; y: number; z: -1 | 0 | 1 } }> =
   ref({
     carrier: { x: 1, y: 1, z: 0 },
@@ -336,38 +327,14 @@ const fleet: Ref<{ [key: string]: { x: number; y: number; z: -1 | 0 | 1 } }> =
 const selX = ref(-1);
 const selY = ref(-1);
 
-type Turn = {
-  [key: string]: 'miss' | 'hit';
-};
-
-const opTurns: Turn = {
-  '1|1': 'miss',
-  '4|5': 'miss',
-  '5|6': 'miss',
-  '6|5': 'hit',
-  '6|6': 'hit',
-  '6|7': 'hit',
-  '6|8': 'miss',
-};
-
-const myTurns: Turn = {
-  '1|2': 'miss',
-  '7|5': 'miss',
-  '8|6': 'miss',
-  '5|2': 'hit',
-  '5|3': 'hit',
-  '5|4': 'hit',
-  '7|9': 'miss',
-};
-
 function clickOnMapEmpty() {
-  console.log('clickOnMapEmpty');
+  // console.log('clickOnMapEmpty');
   selX.value = -1;
   selY.value = -1;
 }
 function clickOnMap(x: number, y: number) {
   setTimeout(() => {
-    console.log('clickOnMap', x, y);
+    // console.log('clickOnMap', x, y);
     selX.value = x;
     selY.value = y;
   }, 100);
@@ -440,7 +407,7 @@ if (window.ethereum == null) {
   // console.log('MetaMask not installed; using read-only defaults');
   // // provider = ethers.getDefaultProvider();
   // provider = (ethers as any).getDefaultProvider();
-  console.log('nothing');
+  console.log('metamask not found');
 } else {
   // Connect to the MetaMask EIP-1193 object. This is a standard
   // protocol that allows Ethers access to make all read-only
@@ -454,7 +421,7 @@ if (window.ethereum == null) {
   // operations, which will be performed by the private key
   // that MetaMask manages for the user.
   signer = await provider.getSigner();
-  console.log('get signer', provider, signer);
+  // console.log('get signer', provider, signer);
 
   // let accounts = await provider.send("eth_requestAccounts", []);
   // account.value = accounts[0];
@@ -463,25 +430,32 @@ if (window.ethereum == null) {
 
 const g = Game__factory.connect(
   // '0x0327BdBc3cE56723B5319D90E106685755f42A8f',
-  '0xBFfb879445a35327f2955Da1a2cDC99d9fb04D5D',
+  '0x64e10aC0b7df3941b4B1c415946e7DbBb4473069',
   signer
 );
-// console.log('get game index');
-const gi = await g.gameIndex();
-// console.log('index', gi);
 
 const gameList: Ref<GameState[]> = ref([]);
+const isListRefreshing = ref(false);
 
 refreshList();
 
 async function refreshList() {
-  gameList.value = [];
-  for (let i = Math.max(Number(gi) - 5, 0); i < gi; i++) {
-    const gs = await g.gameState(i);
-    // console.log('gs', gs);
-    // const gg = await g.games(i);
-    // console.log('gg', gg);
-    gameList.value.push(convertToGameState(gs, account.value, BigInt(i)));
+  try {
+    isListRefreshing.value = true;
+    // console.log('get game index');
+    const gi = await g.gameIndex();
+    // console.log('index', gi);
+    const arr = [];
+    for (let i = Math.max(Number(gi) - 5, 0); i < gi; i++) {
+      const gs = await g.gameState(i);
+      // console.log('gs', gs);
+      // const gg = await g.games(i);
+      // console.log('gg', gg);
+      arr.push(convertToGameState(gs, account.value, BigInt(i)));
+    }
+    gameList.value = arr;
+  } finally {
+    isListRefreshing.value = false;
   }
 }
 
@@ -490,7 +464,7 @@ async function clickGame(id: bigint) {
   if (!game) return;
   switch (game.status) {
     case 'MY-GAMING':
-      $q.notify('Not support');
+      refreshGame(id);
       break;
     case 'WAITOTHER':
       $q.notify('Please wait other to join');
@@ -530,7 +504,11 @@ async function submit() {
       spinner: QSpinnerClock,
     });
     await t.wait();
-    refreshList();
+
+    // delay refresh due to RPC may not see this transaction such fast
+    setTimeout(() => {
+      refreshList();
+    }, 4000);
   } finally {
     $q.loading.hide();
   }
@@ -562,10 +540,96 @@ async function join(id: bigint) {
     });
     await t.wait();
 
-    gameMode.value = 'Attack';
+    refreshGame(id);
   } finally {
     $q.loading.hide();
   }
+}
+
+// ======================== Attack Page
+
+type Turn = {
+  [key: string]: 'miss' | 'hit';
+};
+
+const opTurns: Ref<Turn> = ref({
+  '1|1': 'miss',
+  '4|5': 'miss',
+  '5|6': 'miss',
+  '6|5': 'hit',
+  '6|6': 'hit',
+  '6|7': 'hit',
+  '6|8': 'miss',
+});
+
+const myTurns: Ref<Turn> = ref({
+  '1|2': 'miss',
+  '7|5': 'miss',
+  '8|6': 'miss',
+  '5|2': 'hit',
+  '5|3': 'hit',
+  '5|4': 'hit',
+  '7|9': 'miss',
+});
+
+async function refreshGame(id: bigint) {
+  const game = gameList.value.filter((_) => _.id == id)[0];
+  if (!game) return;
+  const gs = await g.shots(id);
+  let [p1s, p2s, p1h, p2h] = gs;
+  const swap = (a: object, b: object) => {
+    const x = a;
+    a = b;
+    b = x;
+  };
+  if (
+    account.value != game.participants[0] &&
+    account.value == game.participants[1]
+  ) {
+    swap(p1s, p2s);
+    swap(p1h, p2h);
+  }
+
+  opTurns.value = convertShots(p2s, p2h);
+  myTurns.value = convertShots(p1s, p1h);
+  console.log(opTurns.value, myTurns.value);
+
+  gameMode.value = 'Attack';
+}
+
+function convertShots(rawShot: bigint[], rawHit: boolean[]): Turn {
+  const turn: Turn = {};
+  for (let i = 0; i < rawShot.length; i++) {
+    const e = Number(rawShot[i]);
+    if (e > 0) {
+      const h = Number(rawHit[i]);
+      const x = e % 10;
+      const y = Math.floor(e / 10);
+      turn[`${x + 1}|${y + 1}`] = h ? 'hit' : 'miss';
+    }
+  }
+  return turn;
+}
+
+function attack(x: number, y: number) {
+  $q.dialog({
+    title: 'Confirm',
+    message: `Attack (${x}, ${y}), confirm?`,
+    cancel: true,
+    persistent: true,
+  })
+    .onOk(() => {
+      // console.log('>>>> OK')
+    })
+    .onOk(() => {
+      // console.log('>>>> second OK catcher')
+    })
+    .onCancel(() => {
+      // console.log('>>>> Cancel')
+    })
+    .onDismiss(() => {
+      // console.log('I am triggered on both OK and Cancel')
+    });
 }
 </script>
 

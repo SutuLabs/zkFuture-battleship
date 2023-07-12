@@ -18,6 +18,9 @@ interface IGame {
         /// Mapping of player shot indices to turn number.
         /// The shot indices of the second player are offset by 100.
         mapping(uint256 => uint256) shots;
+        /// Mapping of player hit shot, 1-hit, 0-miss
+        /// The shot indices of the second player are offset by 100.
+        mapping(uint256 => bool) shipHits;
         /// The number of hits each player has made on a ship.
         uint256[2] hits;
         /// The winner of the game.
