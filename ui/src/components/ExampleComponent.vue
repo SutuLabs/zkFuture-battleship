@@ -67,7 +67,7 @@
                   </template>
                 </div>
               </div>
-              <q-menu touch-position>
+              <q-menu touch-position auto-close>
                 <div class="no-wrap q-pa-md">
                   <div v-if="selX > -1 && selY > -1" class="text-h6">
                     ({{ selX }}, {{ selY }})
@@ -117,6 +117,7 @@
                         class="q-mt-sm"
                         :label="ships.filter((_) => _.id == ship)[0]?.name"
                         :icon="'img:/images/' + ship + '.svg'"
+                        v-close-popup
                         @click="deploy(ship)"
                       />
                       <br />
@@ -589,7 +590,7 @@ const myTurns: Ref<Turn> = ref({
   '7|9': 'miss',
 });
 
-async function refreshGame(id: bigint | undefined) {
+async function refreshGame(id: bigint | undefined = undefined) {
   try {
     if (id === undefined) id = curGame.value?.id;
     if (id === undefined) return;
