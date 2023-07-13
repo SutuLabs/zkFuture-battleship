@@ -6,6 +6,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('layouts/MainLayout.vue'),
     children: [{ path: '', component: () => import('pages/IndexPage.vue') }],
   },
+  {
+    path: '/future',
+    component: () => import('layouts/FutureLayout.vue'),
+    children: [{ path: '', component: () => import('pages/ConvertToolPage.vue') }],
+  },
 
   // Always leave this as last one,
   // but you can also remove it
